@@ -1,0 +1,193 @@
+---
+title: "Population Health Impact and Economic Consequences of Storms"
+author: "Ben Kesseler"
+date: "May 18, 2016"
+output: html_document
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Synopsis
+This report examines the U.S. National Oceanic and Atmospheric Administration's 
+(NOAA) storm database, finding _____________. All analysis was performed at the
+national level, ignoring specific locations. Individual "events" are not easily
+determined to assess impacts per "event", so impacts are considered in aggregate
+over time, by year, and per day.
+
+# Loading and Processing the Raw Data
+
+Library packages are loaded for the entire analysis. Code output has been
+suppressed for this code only.
+
+```{r libraries, results = 'hide'}
+libraries <- c("ggplot2",
+               "knitr",
+               "tools",
+               "readr",
+               "scales",
+               "lubridate"
+               )
+sapply(libraries, library, character.only = TRUE)
+```
+
+We start with the [NOAA Storm Data](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2)
+that is archived on the course website and documented [here](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf) and [here](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2FNCDC%20Storm%20Events-FAQ%20Page.pdf).
+
+```{r dataimport, cache = TRUE}
+source_url <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+target_local_archive <- "storm_data.csv.bz2"
+
+if (!file.exists(target_local_archive)) {
+  download.file(source_url,target_local_archive)
+}
+
+storm_data <- read_csv(target_local_archive)
+```
+
+The analysis covers the entire United States, so location is not important.
+
+Each row is a very detailed description of a location, event type, and damage,
+if any. Actual logical events such as a regional storm or other weather impact 
+might entail many rows, and there is no obvious way to usefully aggregate the 
+rows to logical events.
+
+As a result, the data will be aggregated by event type at the date level, as a
+proxy for logical events. This will allow the analysis to calculate the impact
+at a per-day level, an annual level, and across the entire database.
+
+Once the data is loaded from the .csv.bz2 file, I keep only the date, event
+type, fatalities, injuries, property damage, and crop damage.
+
+I process the original date field into a proper date format, and convert the 
+economic impacts into a consistent scale. I'm unsure of the meaning of
+non-standard exponents in the data, so I'm ignoring them, after documenting
+their prevalence.
+
+```{r datacleaning}
+storm_data_cleaned <- storm_data[, c("BGN_DATE",
+                                     "EVTYPE",
+                                     "FATALITIES",
+                                     "INJURIES",
+                                     "PROPDMG",
+                                     "PROPDMGEXP",
+                                     "CROPDMG",
+                                     "CROPDMGEXP"
+                                     )
+                                 ]
+
+colnames(storm_data_cleaned) <- c("BGN_DATE",
+                                  "event_type",
+                                  "fatalities",
+                                  "injuries",
+                                  "property_damage",
+                                  "property_damage_exponent",
+                                  "crop_damage",
+                                  "crop_damage_exponent"
+                                  )
+
+storm_data_cleaned$date <- as.Date(
+  storm_data_cleaned$BGN_DATE,
+  format = "%m/%d/%Y"
+)
+
+mappable_exponents_property <- sum(storm_data_cleaned$property_damage_exponent == "B") +
+                               sum(storm_data_cleaned$property_damage_exponent == "M") +
+                               sum(storm_data_cleaned$property_damage_exponent == "K") +
+                               sum(storm_data_cleaned$property_damage_exponent == "")
+
+mappable_exponents_crop <- sum(storm_data_cleaned$crop_damage_exponent == "B") +
+                           sum(storm_data_cleaned$crop_damage_exponent == "M") +
+                           sum(storm_data_cleaned$crop_damage_exponent == "K") +
+                           sum(storm_data_cleaned$crop_damage_exponent == "")
+
+percent_unmappable_property <- 1 - mappable_exponents_property / nrow(storm_data_cleaned)
+
+percent_unmappable_crop <- 1 - mappable_exponents_crop / nrow(storm_data_cleaned)
+
+print(paste(percent(percent_unmappable_property),
+            "of property damage records have unmappable exponents"))
+
+print(paste(percent(percent_unmappable_crop),
+            "of crop damage records have unmappable exponents"))
+```
+
+I now convert things to a consistent numeric scale, so summation functions will
+work.
+
+```{r datacleaning2}
+scalar_mapping <- data.frame("property_damage_exponent" = c("B","M","K"),
+                             "property_damage_numeric_exponent" = c(1000000000,
+                                                                    1000000,
+                                                                    1000),
+                             "crop_damage_exponent" = c("B","M","K"),
+                             "crop_damage_numeric_exponent" = c(1000000000,
+                                                                1000000,
+                                                                1000)
+                            )
+
+storm_data_cleaned <- merge(storm_data_cleaned,
+                            scalar_mapping[, 
+                                           c("property_damage_exponent",
+                                             "property_damage_numeric_exponent"
+                                            )
+                                          ],
+                            all.x = TRUE)
+storm_data_cleaned$property_damage_numeric_exponent[
+  is.na(storm_data_cleaned$property_damage_numeric_exponent)
+  ] <- 1
+
+storm_data_cleaned <- merge(storm_data_cleaned,
+                            scalar_mapping[, 
+                                           c("crop_damage_exponent",
+                                             "crop_damage_numeric_exponent"
+                                            )
+                                          ],
+                            all.x = TRUE)
+storm_data_cleaned$crop_damage_numeric_exponent[
+  is.na(storm_data_cleaned$crop_damage_numeric_exponent)
+  ] <- 1
+
+storm_data_cleaned$property_damage <- storm_data_cleaned$property_damage * 
+                                      storm_data_cleaned$property_damage_numeric_exponent
+
+storm_data_cleaned$crop_damage <- storm_data_cleaned$crop_damage * 
+                                  storm_data_cleaned$crop_damage_numeric_exponent
+
+storm_data_cleaned$economic_damage <- storm_data_cleaned$property_damage + 
+                                      storm_data_cleaned$crop_damage
+
+#storm_data_cleaned$event_type <- toTitleCase(tolower(storm_data_cleaned$EVTYPE))
+
+```
+
+Now I will sumamrize the data at the level needed for plotting and further
+exploration - daily by event type.
+
+```{r dataaggregation}
+storm_data_cleaned <- storm_data_cleaned[, c("date",
+                                             "event_type",
+                                             "fatalities",
+                                             "injuries",
+                                             "economic_damage")]
+
+storm_data_summary <- aggregate(. ~ date + event_type,
+                                data = storm_data_cleaned,
+                                FUN = sum)
+
+storm_data_summary$event_type <- tolower(storm_data_summary$event_type)
+
+storm_data_summary <- aggregate(. ~ date + event_type,
+                                data = storm_data_summary,
+                                FUN = sum)
+
+##write.csv(storm_data_summary,"storm.csv")
+##replace tstm with thunderstorm
+## check for thun?
+## remove spaces
+##re-aggregate
+storm_data_summary$year <- year(storm_data_summary$date)
+
+```
+
