@@ -9,14 +9,20 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+***
+
 # Synopsis
 This report examines the U.S. National Oceanic and Atmospheric Administration's 
 (NOAA) storm database, finding _____________. All analysis was performed at the
 national level, ignoring specific locations. Individual "events" are not easily
 determined to assess impacts per "event", so impacts are considered in aggregate
-over time, by year, and per day.
+over time.
 
-# Loading and Processing the Raw Data
+***
+
+# Data Processing
+
+## Loading the Raw Data
 
 Library packages are loaded for the entire analysis. Code output has been
 suppressed for this code only.
@@ -27,7 +33,8 @@ libraries <- c("ggplot2",
                "tools",
                "readr",
                "scales",
-               "lubridate"
+               "lubridate",
+               "pander"
                )
 sapply(libraries, library, character.only = TRUE)
 ```
@@ -43,27 +50,30 @@ if (!file.exists(target_local_archive)) {
   download.file(source_url,target_local_archive)
 }
 
-storm_data <- read_csv(target_local_archive)
+storm_data <- read_csv(target_local_archive, na = "NA")
 ```
 
-The analysis covers the entire United States, so location is not important.
+***
+
+## Initial Cleaning
 
 Each row is a very detailed description of a location, event type, and damage,
 if any. Actual logical events such as a regional storm or other weather impact 
 might entail many rows, and there is no obvious way to usefully aggregate the 
 rows to logical events.
 
-As a result, the data will be aggregated by event type at the date level, as a
-proxy for logical events. This will allow the analysis to calculate the impact
-at a per-day level, an annual level, and across the entire database.
+The analysis covers the entire United States, so location is not important.
 
-Once the data is loaded from the .csv.bz2 file, I keep only the date, event
+As a result, the data will be aggregated by event type at the year level. This 
+will allow the analysis to calculate the impact at an annual level if needed,
+and across the entire time period for the main analysis.
+
+Once the data is loaded from the .csv.bz2 file, I keep only the year, event
 type, fatalities, injuries, property damage, and crop damage.
 
-I process the original date field into a proper date format, and convert the 
-economic impacts into a consistent scale. I'm unsure of the meaning of
-non-standard exponents in the data, so I'm ignoring them, after documenting
-their prevalence.
+I convert the economic impacts into a consistent scale. I'm unsure of the 
+meaning of non-standard exponents in the data, so I'm treating them as 1, after 
+documenting their prevalence.
 
 ```{r datacleaning}
 storm_data_cleaned <- storm_data[, c("BGN_DATE",
@@ -87,10 +97,8 @@ colnames(storm_data_cleaned) <- c("BGN_DATE",
                                   "crop_damage_exponent"
                                   )
 
-storm_data_cleaned$date <- as.Date(
-  storm_data_cleaned$BGN_DATE,
-  format = "%m/%d/%Y"
-)
+storm_data_cleaned$year <- year(as.POSIXct(storm_data_cleaned$BGN_DATE,
+                                           format = "%m/%d/%Y"))
 
 mappable_exponents_property <- sum(storm_data_cleaned$property_damage_exponent == "B") +
                                sum(storm_data_cleaned$property_damage_exponent == "M") +
@@ -112,6 +120,11 @@ print(paste(percent(percent_unmappable_property),
 print(paste(percent(percent_unmappable_crop),
             "of crop damage records have unmappable exponents"))
 ```
+
+Those are a very small percent of the records, so treating them as 1 should be
+reasonable.
+
+***
 
 I now convert things to a consistent numeric scale, so summation functions will
 work.
@@ -157,37 +170,353 @@ storm_data_cleaned$crop_damage <- storm_data_cleaned$crop_damage *
 
 storm_data_cleaned$economic_damage <- storm_data_cleaned$property_damage + 
                                       storm_data_cleaned$crop_damage
-
-#storm_data_cleaned$event_type <- toTitleCase(tolower(storm_data_cleaned$EVTYPE))
-
 ```
 
-Now I will sumamrize the data at the level needed for plotting and further
-exploration - daily by event type.
+## Data Aggregation
+
+Now I will summarize the data at the level needed for plotting and further
+exploration - annual by event type.
 
 ```{r dataaggregation}
-storm_data_cleaned <- storm_data_cleaned[, c("date",
+storm_data_cleaned <- storm_data_cleaned[, c("year",
                                              "event_type",
                                              "fatalities",
                                              "injuries",
                                              "economic_damage")]
 
-storm_data_summary <- aggregate(. ~ date + event_type,
+storm_data_summary <- aggregate(. ~ year + event_type,
                                 data = storm_data_cleaned,
                                 FUN = sum)
 
+storm_data_count <- aggregate(fatalities ~ year + event_type,
+                              data = storm_data_cleaned,
+                              FUN = length)
+
+storm_data_summary <- cbind(storm_data_summary,storm_data_count$fatalities)
+
+storm_data_summary$count <- storm_data_count$fatalities
+
+count_by_year <- aggregate(count ~ year, data = storm_data_summary, FUN = sum)
+
+# panderOptions("table.alignment.default","left")
+# pander(count_by_year)
+```
+
+It looks like there is a marked increase in the number of events in 1995. I am
+concerned that data from previous years doesn't accurately represent the
+distribution of event types, so I am restricting the analysis to 1995 and
+forward.
+
+## Event Type Clean-up
+
+Here I will summarize the data by event_type, for the years 1995 and after, and
+I will remove event types that have no fatalities, injuries, or economic damage,
+and begin cleaning event types.
+
+```{r datasubsetting}
+storm_data_summary <- storm_data_summary[storm_data_summary$year >= 1995, ]
+
+storm_data_summary <- aggregate(. ~ event_type,
+                                data = storm_data_summary[, c("event_type",
+                                                              "fatalities",
+                                                              "injuries",
+                                                              "economic_damage")
+                                                          ],
+                                FUN = sum)
+
+storm_data_summary <- storm_data_summary[storm_data_summary$fatalities > 0 |
+                                           storm_data_summary$injuries > 0 |
+                                           storm_data_summary$economic_damage > 0
+                                         , ]
+
 storm_data_summary$event_type <- tolower(storm_data_summary$event_type)
 
-storm_data_summary <- aggregate(. ~ date + event_type,
+storm_data_summary$event_type <- gsub("[^a-zA-Z0-9]","",storm_data_summary$event_type)
+
+storm_data_summary <- aggregate(. ~ event_type,
                                 data = storm_data_summary,
                                 FUN = sum)
 
-##write.csv(storm_data_summary,"storm.csv")
-##replace tstm with thunderstorm
-## check for thun?
-## remove spaces
-##re-aggregate
-storm_data_summary$year <- year(storm_data_summary$date)
-
+# panderOptions("table.alignment.default","left")
+# pander(storm_data_summary)
 ```
 
+***
+
+Now I'm going to clean up some of the obvious event_types errors.
+
+```{r textreplacement}
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "coastalflood"
+  ] <- "coastalflooding"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "erosioncstlflood"
+  ] <- "coastalfloodingerosion"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "flashfloodflood"
+  ] <- "flashflood"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "flashflooding"
+  ] <- "flashflood"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "flashfloods"
+  ] <- "flashflood"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "flashfloodstreet"
+  ] <- "flashflood"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "floodflash"
+  ] <- "flashflood"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "floodflashflood"
+  ] <- "flashflood"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "flooding"
+  ] <- "flood"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "floods"
+  ] <- "flood"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "floodingheavyrain"
+  ] <- "floodheavyrain"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "gustywinds"
+  ] <- "gustywind"
+
+storm_data_summary$event_type[
+  grep("^hail", storm_data_summary$event_type)
+  ] <- "hail"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "heatwave"
+  ] <- "heat"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "heavyrains"
+  ] <- "heavyrain"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "heavyrainsevereweather"
+  ] <- "heavyrain"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "heavysnowandstrongwinds"
+  ] <- "heavysnowandhighwinds"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "heavysnowshower"
+  ] <- "heavysnow"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "heavysnowsqualls"
+  ] <- "heavysnow"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "heavysurfhighsurf"
+  ] <- "highsurf"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "heavysurf"
+  ] <- "highsurf"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "heavyswells"
+  ] <- "highswells"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "highwinddamage"
+  ] <- "highwind"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "highwindg40"
+  ] <- "highwind"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "highwinds"
+  ] <- "highwind"
+
+storm_data_summary$event_type[
+  grep("^hurricane", storm_data_summary$event_type)
+  ] <- "hurricane"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "hvyrain"
+  ] <- "heavyrain"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "icejamfloodminor"
+  ] <- "icejamflooding"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "iceonroad"
+  ] <- "icyroads"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "iceroads"
+  ] <- "icyroads"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "landslides"
+  ] <- "landslide"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "lightninginjury"
+  ] <- "lightning"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "lightsnowfall"
+  ] <- "lightsnow"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "marinehighwind"
+  ] <- "marinestrongwind"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "marinetstmwind"
+  ] <- "marinethunderstormwind"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "mixedprecip"
+  ] <- "mixedprecipitation"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "mudslides"
+  ] <- "mudslide"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "ripcurrents"
+  ] <- "ripcurrent"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "riverandstreamflood"
+  ] <- "riverflooding"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "riverflood"
+  ] <- "riverflooding"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "severethunderstorm"
+  ] <- "thunderstorm"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "severethunderstorms"
+  ] <- "thunderstorm"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "severethunderstormwinds"
+  ] <- "thunderstorm"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "thunerstormwinds"
+  ] <- "thunderstorm"
+
+storm_data_summary$event_type[
+  grep("^thunderstorm", storm_data_summary$event_type)
+  ] <- "thunderstorm"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "strongwinds"
+  ] <- "strongwind"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "stormforcewinds"
+  ] <- "strongwind"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "stormsurgetide"
+  ] <- "stormsurge"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "snowsquall"
+  ] <- "snow"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "snowsqualls"
+  ] <- "snow"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "snowice"
+  ] <- "snowandice"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "smallhail"
+  ] <- "hail"
+
+storm_data_summary$event_type[
+  grep("^tornado", storm_data_summary$event_type)
+  ] <- "tornado"
+
+storm_data_summary$event_type[
+  grep("^tropicalstorm", storm_data_summary$event_type)
+  ] <- "tropicalstorm"
+
+storm_data_summary$event_type[
+  grep("^tstmwind", storm_data_summary$event_type)
+  ] <- "thunderstorm"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "tunderstormwind"
+  ] <- "thunderstorm"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "unseasonablecold"
+  ] <- "unseasonablycold"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "urbanandsmallstreamfloodin"
+  ] <- "urbanflood"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "urbanflooding"
+  ] <- "urbanflood"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "urbansmallstreamflood"
+  ] <- "urbanflood"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "urbansmlstreamfld"
+  ] <- "urbanflood"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "waterspouttornado"
+  ] <- "waterspout"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "wildfires"
+  ] <- "wildfire"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "wildforestfires"
+  ] <- "wildforestfire"
+
+storm_data_summary$event_type[
+  storm_data_summary$event_type == "winds"
+  ] <- "wind"
+
+storm_data_summary <- aggregate(. ~ event_type,
+                                data = storm_data_summary,
+                                FUN = sum)
+```
+
+Alright, that's as much cleaning as can reasonably be done. Now to look at the 
+top sources of fatalities, injuries, and economic damage.
+
+***
+
+## Top 20 Fatality, Injury, and Economic Damage Sources
+
+I will determine the top 20 event types for causing fatalities + injuries and 
+separately for causing economic damage.
