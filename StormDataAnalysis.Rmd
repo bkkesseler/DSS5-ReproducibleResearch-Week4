@@ -1,7 +1,7 @@
 ---
 title: "Population Health Impact and Economic Consequences of Storms"
 author: "Ben Kesseler"
-date: "May 18, 2016"
+date: "May 22, 2016"
 output: html_document
 ---
 
@@ -20,10 +20,28 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # Synopsis
 This report examines the U.S. National Oceanic and Atmospheric Administration's 
-(NOAA) storm database, finding _____________. All analysis was performed at the
-national level, ignoring specific locations. Individual "events" are not easily
-determined to assess impacts per "event", so impacts are considered in aggregate
-over time.
+(NOAA) storm database, comparing economic damages, injuries, and fatalities. 
+All analysis was performed at the national level, ignoring specific locations. 
+Individual "events" are not easily determined to assess impacts per "event", so 
+impacts are considered in aggregate over time.
+
+The most damaging and dangerous event types are tornados, hurricanes/typhoons, 
+thunderstorm winds, lightning, hail, floods, storm surges/tides, rip currents, 
+and heat.
+
+Heat (combining heat and excessive heat) is the most dangerous event in terms of
+fatalities, and second most dangerous in terms of injuries, while causing little
+economic damage, so it should be prepared for in warm climates.
+
+Tornados are very damaging in both health and economic terms, and should be
+prepared for in areas prone to experience them.
+
+Floods are extremely damaging economically, while also impacting health fairly
+severely, so flood prone regions should take relevant precautions.
+
+Hurricanes and typhoons, perhaps because of the advanced warning usually 
+available, cause less impact to health, while causing the second highest 
+economic damages.
 
 ***
 
@@ -41,7 +59,10 @@ libraries <- c("ggplot2",
                "readr",
                "scales",
                "lubridate",
-               "pander"
+               "pander",
+               "reshape",
+               "ggrepel",
+               "gridExtra"
                )
 sapply(libraries, library, character.only = TRUE)
 ```
@@ -318,7 +339,6 @@ percent_unmatched_fatalities <- initial_matching$fatalities[initial_matching$eve
 
 percent_unmatched_economic_damage <- initial_matching$economic_damage[initial_matching$event_match == 0] / 
   sum(initial_matching$economic_damage)
-
 ```
 
 After minimal text formatting, I find that when comparing to the expected 48
@@ -545,7 +565,6 @@ percent_unmatched_fatalities_final <- final_matching$fatalities[final_matching$e
 
 percent_unmatched_economic_damage_final <- final_matching$economic_damage[final_matching$event_match == 0] / 
   sum(final_matching$economic_damage)
-
 ```
 
 After more aggressive remapping, I find that when comparing to the expected 48
@@ -613,7 +632,171 @@ storm_data_summary$event_type[storm_data_summary$event_type == "winterweather"] 
 
 # Results
 
-## Top 20 Fatality, Injury, and Economic Damage Sources
+## Fatality, Injury, and Economic Damage Sources
 
-I will determine the top 20 event types for causing fatalities + injuries and 
-separately for causing economic damage.
+I need to examine the distribution of injuries, fatalaties, and economic damage
+by the event types present in this data.
+
+I'll be using top 20 for most of these analyses, to make the plots easier to 
+review.
+
+```{r figure1prep}
+storm_data_final <- storm_data_summary[storm_data_summary$event_match == 1, ]
+storm_data_final$event_type <- factor(storm_data_final$event_type)
+
+storm_data_final$combined_health <- storm_data_final$injuries + 
+                                    storm_data_final$fatalities
+
+storm_data_final$event_type <- factor(storm_data_final$event_type,
+                                      levels = storm_data_final$event_type[
+                                        order(storm_data_final$combined_health,
+                                              decreasing = TRUE)])
+
+storm_data_final_plot1 <- head(storm_data_final[
+  order(-storm_data_final$combined_health), ], 20)
+
+storm_data_final_plot1 <- melt(data = storm_data_final_plot1[, c("event_type",
+                                                                 "fatalities",
+                                                                 "injuries")
+                                                            ], id="event_type")
+
+storm_data_final_plot1$variable <- as.factor(toTitleCase(
+    as.character(storm_data_final_plot1$variable)))
+
+First_Plot <- ggplot(data = storm_data_final_plot1,
+                       aes(x = event_type, y = value, fill = variable)) +
+                geom_bar(stat = "identity", position = "dodge") +
+                theme_bw() +
+                coord_flip() +
+                ggtitle("Injuries & Fatalities by Event Type") +
+                xlab("Event Types") +
+                ylab("Injuries & Fatalities") + 
+                scale_fill_manual(values = c(Fatalities = "red", Injuries = "orange")) +
+                theme(legend.position = c(0.9, 0.8), 
+                      legend.title = element_blank(),
+                      panel.grid.major.y = element_line(colour = "#808080"))
+
+storm_data_final_plot2 <- head(storm_data_final[
+  order(-storm_data_final$combined_health), ], 20)
+
+Second_Plot <- ggplot(data = storm_data_final_plot2, aes(x = injuries, 
+                                                         y = fatalities)) + 
+  geom_point() +
+  theme_bw() +
+  ggtitle("Injuries vs Fatalities by Event Type") +
+  xlab("Injuries") +
+  ylab("Fatalities") +
+  geom_label_repel(data = subset(storm_data_final_plot2, 
+                                 (injuries > 1500 | fatalities > 250)),
+                   aes(label = event_type))
+
+storm_data_final_plot3 <- storm_data_final_plot2
+storm_data_final_plot3$ratio <- storm_data_final_plot2$fatalities / storm_data_final_plot2$injuries
+
+Third_Plot <- ggplot(data = storm_data_final_plot3, aes(x = event_type, y = ratio, fill = ratio)) + 
+  theme_bw() + 
+  ggtitle("Fatality to Injury Ratio by Event Type") +
+  xlab("Event Types") +
+  ylab("Ratio of Fatalities to Injuries") + 
+  geom_bar(stat = "identity") + 
+  coord_flip() +
+  scale_fill_gradient("ratio", low = "orange", high = "red") +
+  theme(legend.position = c(0.85, 0.15),
+        legend.title = element_blank(),
+        legend.direction = "horizontal")
+```
+
+## Figure 1 - Injuries & Fatality Exploration
+
+```{r figure1, fig.align = "center", fig.width = 10, fig.height = 10, fig.cap = "The first plot shows injuries and fatalities for the top 20 event types. The second plot shows injuries vs fatalities for the same subset of events. The third plot shows the ratio of fatalities to injuries, to demonstrate which events are the most dangerous, independent of overall prevalence."}
+grid.arrange(First_Plot, Second_Plot, Third_Plot, ncol = 1)
+```
+
+***
+
+Fatalities and injuries seem to be correlated, although Tornados cause 
+signifigantly more injuries than any other event. However, Rip Currents are more
+dangerous to life, independent of overall risk of encountering the events.
+
+***
+
+```{r figure2prep}
+storm_data_final$event_type <- factor(storm_data_final$event_type,
+                                      levels = storm_data_final$event_type[
+                                        order(storm_data_final$economic_damage,
+                                              decreasing = TRUE)])
+
+storm_data_final_plot4 <- head(storm_data_final[
+  order(-storm_data_final$economic_damage), ], 20)
+
+storm_data_final_plot4$economic_damage <- storm_data_final_plot4$economic_damage / 1000000000
+
+Fourth_Plot <- ggplot(data = storm_data_final_plot4,
+                       aes(x = event_type, y = economic_damage, fill = economic_damage)) +
+                geom_bar(stat = "identity") +
+                theme_bw() +
+                coord_flip() +
+                ggtitle("Economic Damage by Event Type") +
+                xlab("Event Types") +
+                ylab("Economic Damage in Billions of USD (unadjusted)") + 
+                scale_fill_gradient("economic_damage", low = "green", high="dark green") +
+                theme(legend.position = c(0.85, 0.9), 
+                      legend.direction = "horizontal",
+                      legend.title = element_blank(),
+                      panel.grid.major.y = element_line(colour = "#808080"))
+```
+
+## Figure 2 - Economic Damage Exploration
+
+```{r figure2, fig.align = "center", fig.width = 10, fig.height = 4, fig.cap = "Economic Damage in Billions of USD is displayed, for the top 20 event types. Flood may be somewhat overstated as all flood events must have a damage statement, even if an estimate."}
+
+Fourth_Plot
+```
+
+Floods, hurricanes/typhoons, storm surges/tides, and tornados are the most
+damaging events, economically.
+
+***
+
+```{r figure3prep}
+Fifth_Plot <- ggplot(data = storm_data_final, aes(x = economic_damage/1000000000, 
+                                                  y = injuries)) + 
+  geom_point() +
+  theme_bw() +
+  ggtitle("Economic Damage vs Injuries by Event Type") +
+  xlab("Economic Damage") +
+  ylab("Injuries") +
+  geom_label_repel(data = subset(storm_data_final, 
+                                 (injuries > 2500 | economic_damage > 15000000000)),
+                   aes(label = event_type))
+
+Sixth_Plot <- ggplot(data = storm_data_final, aes(x = economic_damage/1000000000, 
+                                                  y = fatalities)) + 
+  geom_point() +
+  theme_bw() +
+  ggtitle("Economic Damage vs Fatalities by Event Type") +
+  xlab("Economic Damage") +
+  ylab("Fatalities") +
+  geom_label_repel(data = subset(storm_data_final, 
+                                 (fatalities > 400 | economic_damage > 15000000000)),
+                   aes(label = event_type))
+```
+
+## Figure 3 - Economic Damage vs Injuries & Fatalities by Event Type
+
+```{r figure3, fig.align = "center", fig.width = 10, fig.height = 4, fig.cap = "The first plot shows economic damages vs injuries for all event types. The second plot compares economics damages to fatalities."}
+grid.arrange(Fifth_Plot, Sixth_Plot, ncol = 2)
+```
+
+# Further Exploration
+
+This analysis did not cover events over time or by location, while data on both
+was available in the raw data. A further analysis could plot injuries, 
+fatalities, and economic damage as a density plot over the United States, by
+utilizing the latitude and longitude present in the data. Similarly, after 
+subsetting to post-1994 data to ensure consistent reporting methods, events
+and damages could be compared over time, to determine if any events are occuring
+more frequently, or are causing more impact, over time.
+
+
+
