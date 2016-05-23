@@ -630,15 +630,7 @@ storm_data_summary$event_type[storm_data_summary$event_type == "winterweather"] 
 
 ***
 
-# Results
-
-## Fatality, Injury, and Economic Damage Sources
-
-I need to examine the distribution of injuries, fatalaties, and economic damage
-by the event types present in this data.
-
-I'll be using top 20 for most of these analyses, to make the plots easier to 
-review.
+I'm going to prepare my plots here, so the results section stays clean.
 
 ```{r figure1prep}
 storm_data_final <- storm_data_summary[storm_data_summary$event_match == 1, ]
@@ -706,19 +698,6 @@ Third_Plot <- ggplot(data = storm_data_final_plot3, aes(x = event_type, y = rati
         legend.direction = "horizontal")
 ```
 
-## Figure 1 - Injuries & Fatality Exploration
-
-```{r figure1, fig.align = "center", fig.width = 10, fig.height = 10, fig.cap = "The first plot shows injuries and fatalities for the top 20 event types. The second plot shows injuries vs fatalities for the same subset of events. The third plot shows the ratio of fatalities to injuries, to demonstrate which events are the most dangerous, independent of overall prevalence."}
-grid.arrange(First_Plot, Second_Plot, Third_Plot, ncol = 1)
-```
-
-***
-
-Fatalities and injuries seem to be correlated, although Tornados cause 
-signifigantly more injuries than any other event. However, Rip Currents are more
-dangerous to life, independent of overall risk of encountering the events.
-
-***
 
 ```{r figure2prep}
 storm_data_final$event_type <- factor(storm_data_final$event_type,
@@ -746,16 +725,6 @@ Fourth_Plot <- ggplot(data = storm_data_final_plot4,
                       panel.grid.major.y = element_line(colour = "#808080"))
 ```
 
-## Figure 2 - Economic Damage Exploration
-
-```{r figure2, fig.align = "center", fig.width = 10, fig.height = 4, fig.cap = "Economic Damage in Billions of USD is displayed, for the top 20 event types. Flood may be somewhat overstated as all flood events must have a damage statement, even if an estimate."}
-
-Fourth_Plot
-```
-
-Floods, hurricanes/typhoons, storm surges/tides, and tornados are the most
-damaging events, economically.
-
 ***
 
 ```{r figure3prep}
@@ -782,11 +751,52 @@ Sixth_Plot <- ggplot(data = storm_data_final, aes(x = economic_damage/1000000000
                    aes(label = event_type))
 ```
 
+# Results
+
+## Fatality, Injury, and Economic Damage Sources
+
+I need to examine the distribution of injuries, fatalaties, and economic damage
+by the event types present in this data.
+
+I'll be using top 20 for most of these analyses, to make the plots easier to 
+review.
+
+Note, all of the preparation for these plots occurred above, in the data 
+processing section, but the plots are presented and discussed here.
+
+## Figure 1 - Injuries & Fatality Exploration
+
+```{r figure1, fig.align = "center", fig.width = 10, fig.height = 10, fig.cap = "The first plot shows injuries and fatalities for the top 20 event types. The second plot shows injuries vs fatalities for the same subset of events. The third plot shows the ratio of fatalities to injuries, to demonstrate which events are the most dangerous, independent of overall prevalence."}
+grid.arrange(First_Plot, Second_Plot, Third_Plot, ncol = 1)
+```
+
+***
+
+Fatalities and injuries seem to be correlated, although Tornados cause 
+signifigantly more injuries than any other event. However, Rip Currents are more
+dangerous to life, independent of overall risk of encountering the events.
+
+***
+
+## Figure 2 - Economic Damage Exploration
+
+```{r figure2, fig.align = "center", fig.width = 10, fig.height = 4, fig.cap = "Economic Damage in Billions of USD is displayed, for the top 20 event types. Flood may be somewhat overstated as all flood events must have a damage statement, even if an estimate."}
+
+Fourth_Plot
+```
+
+Floods, hurricanes/typhoons, storm surges/tides, and tornados are the most
+damaging events, economically.
+
+***
+
 ## Figure 3 - Economic Damage vs Injuries & Fatalities by Event Type
 
 ```{r figure3, fig.align = "center", fig.width = 10, fig.height = 4, fig.cap = "The first plot shows economic damages vs injuries for all event types. The second plot compares economics damages to fatalities."}
 grid.arrange(Fifth_Plot, Sixth_Plot, ncol = 2)
 ```
+
+***
 
 # Further Exploration
 
