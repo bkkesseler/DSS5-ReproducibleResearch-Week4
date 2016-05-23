@@ -808,5 +808,19 @@ subsetting to post-1994 data to ensure consistent reporting methods, events
 and damages could be compared over time, to determine if any events are occuring
 more frequently, or are causing more impact, over time.
 
+***
 
+# Additional Resources
 
+* [Github Repository](https://github.com/bkkesseler/DSS5-ReproducibleResearch-Week4)
+
+# Session Information
+
+- Toshiba Chromeboook 2 (2015)
+- 1.70 GHz Intel Celeron 3215U
+- 4GB RAM
+- RStudio Version 0.99.893
+
+```{r sessioninfo}
+sessionInfo()
+```
