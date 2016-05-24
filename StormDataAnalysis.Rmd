@@ -61,8 +61,7 @@ libraries <- c("ggplot2",
                "lubridate",
                "pander",
                "reshape",
-               "ggrepel",
-               "gridExtra"
+               "ggrepel"
                )
 sapply(libraries, library, character.only = TRUE)
 ```
@@ -75,7 +74,7 @@ source_url <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.
 target_local_archive <- "storm_data.csv.bz2"
 
 if (!file.exists(target_local_archive)) {
-  download.file(source_url,target_local_archive)
+  download.file(source_url, target_local_archive)
 }
 
 storm_data <- read_csv(target_local_archive, na = "NA")
@@ -85,10 +84,10 @@ storm_data <- read_csv(target_local_archive, na = "NA")
 
 ## Initial Cleaning
 
-Each row is a very detailed description of a location, event type, and damage,
-if any. Actual logical events such as a regional storm or other weather impact 
-might entail many rows, and there is no obvious way to usefully aggregate the 
-rows to logical events.
+Each row is a very detailed description of a location, event type, injuries,
+fatalities, and damage, if any. Actual logical events such as a regional storm 
+or other weather impact might entail many rows, and there is no obvious way to 
+usefully aggregate the rows to logical events.
 
 The analysis covers the entire United States, so location is not important.
 
@@ -100,19 +99,26 @@ Once the data is loaded from the .csv.bz2 file, I keep only the year, event
 type, fatalities, injuries, property damage, and crop damage.
 
 I convert the economic impacts into a consistent scale. I'm unsure of the 
-meaning of non-standard exponents in the data, so I'm treating them as 1, after 
+meaning of non-standard exponents in the data, so I'm treating them as 0, after 
 documenting their prevalence.
 
+I will also subset the data to any rows with non-0 injuries, fatalities, or
+economic damage.
+
 ```{r datacleaning}
-storm_data_cleaned <- storm_data[, c("BGN_DATE",
-                                     "EVTYPE",
-                                     "FATALITIES",
-                                     "INJURIES",
-                                     "PROPDMG",
-                                     "PROPDMGEXP",
-                                     "CROPDMG",
-                                     "CROPDMGEXP"
-                                     )
+storm_data_cleaned <- storm_data[storm_data$FATALITIES > 0  |
+                                 storm_data$INJURIES   > 0  |
+                                 storm_data$PROPDMG    > 0  |
+                                 storm_data$CROPDMG    > 0, 
+                                 c("BGN_DATE",
+                                   "EVTYPE",
+                                   "FATALITIES",
+                                   "INJURIES",
+                                   "PROPDMG",
+                                   "PROPDMGEXP",
+                                   "CROPDMG",
+                                   "CROPDMGEXP"
+                                   )
                                  ]
 
 colnames(storm_data_cleaned) <- c("BGN_DATE",
@@ -171,20 +177,17 @@ storm_data_cleaned <- merge(storm_data_cleaned,
                                             )
                                           ],
                             all.x = TRUE)
+
 storm_data_cleaned$property_damage_numeric_exponent[
-  is.na(storm_data_cleaned$property_damage_numeric_exponent)
-  ] <- 1
+  is.na(storm_data_cleaned$property_damage_numeric_exponent)] <- 1
 
 storm_data_cleaned <- merge(storm_data_cleaned,
-                            scalar_mapping[, 
-                                           c("crop_damage_exponent",
-                                             "crop_damage_numeric_exponent"
-                                            )
-                                          ],
-                            all.x = TRUE)
+                            scalar_mapping[, c("crop_damage_exponent",
+                                               "crop_damage_numeric_exponent"
+                                               )], all.x = TRUE)
+
 storm_data_cleaned$crop_damage_numeric_exponent[
-  is.na(storm_data_cleaned$crop_damage_numeric_exponent)
-  ] <- 1
+  is.na(storm_data_cleaned$crop_damage_numeric_exponent)] <- 1
 
 storm_data_cleaned$property_damage <- storm_data_cleaned$property_damage * 
                                       storm_data_cleaned$property_damage_numeric_exponent
@@ -229,8 +232,7 @@ count_by_year_table <- data.frame("year1" = count_by_year[1:16, 1],
                                   "year3" = count_by_year[33:48, 1],
                                   "event_count3" = count_by_year[33:48, 2],
                                   "year4" = c(count_by_year[49:62, 1], "", ""),
-                                  "event_count4" = c(count_by_year[49:62, 2], "", "")
-)
+                                  "event_count4" = c(count_by_year[49:62, 2], "", ""))
 
 panderOptions("table.alignment.default","left")
 panderOptions("table.split.table",Inf)
@@ -260,84 +262,49 @@ storm_data_summary <- aggregate(. ~ event_type,
                                                           ],
                                 FUN = sum)
 
-storm_data_summary <- storm_data_summary[storm_data_summary$fatalities > 0 |
-                                         storm_data_summary$injuries > 0 |
-                                         storm_data_summary$economic_damage > 0
-                                         , ]
-
 storm_data_summary$event_type <- tolower(storm_data_summary$event_type)
 
-storm_data_summary$event_type <- gsub("[^a-zA-Z0-9]","",storm_data_summary$event_type)
+storm_data_summary$event_type <- gsub("[^a-zA-Z0-9 ]"," ",storm_data_summary$event_type)
+storm_data_summary$event_type <- gsub("  "," ",storm_data_summary$event_type)
 
 storm_data_summary <- aggregate(. ~ event_type,
                                 data = storm_data_summary,
                                 FUN = sum)
 
-storm_data_summary$event_match[storm_data_summary$event_type == "astronomicallowtide"]    <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "avalanche"]              <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "blizzard"]               <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "coastalflood"]           <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "coldwindchill"]          <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "debrisflow"]             <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "densefog"]               <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "densesmoke"]             <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "drought"]                <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "dustdevil"]              <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "duststorm"]              <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "excessiveheat"]          <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "extremecoldwindchill"]   <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "flashflood"]             <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "flood"]                  <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "frostfreeze"]            <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "funnelcloud"]            <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "freezingfog"]            <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "hail"]                   <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "heat"]                   <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "heavyrain"]              <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "heavysnow"]              <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "highsurf"]               <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "highwind"]               <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "hurricanetyphoon"]       <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "icestorm"]               <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "lakeeffectsnow"]         <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "lakeshoreflood"]         <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "lightning"]              <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "marinehail"]             <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "marinehighwind"]         <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "marinestrongwind"]       <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "marinethunderstormwind"] <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "ripcurrent"]             <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "seiche"]                 <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "sleet"]                  <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "stormsurgetide"]         <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "strongwind"]             <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "thunderstormwind"]       <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "tornado"]                <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "tropicaldepression"]     <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "tropicalstorm"]          <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "tsunami"]                <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "volcanicash"]            <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "waterspout"]             <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "wildfire"]               <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "winterstorm"]            <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "winterweather"]          <- 1
+check_match <- function(f_event_type) {
+  f_event_type %in% c("astronomical low tide", "avalanche", "blizzard",
+                      "coastal flood", "cold wind chill", "debrisflow",
+                      "dense fog", "dense smoke", "drought", "dust devil",
+                      "dust storm", "excessive heat", "extreme cold wind chill",
+                      "flash flood", "flood", "frost freeze", "funnel cloud",
+                      "hail", "heat", "heavy rain", "heavy snow", "high surf", 
+                      "high wind", "hurricane typhoon", "ice storm", 
+                      "lake effect snow", "lakeshore flood", "lightning", 
+                      "marine hail", "marine high wind", "marine strong wind", 
+                      "marine thunderstorm wind", "rip current", "seiche", 
+                      "sleet", "storm surge tide", "strong wind", 
+                      "thunderstorm wind", "tornado", "tropical depression", 
+                      "tropical storm", "tsunami", "volcanic ash", "water spout",
+                      "wildfire", "winter storm", "winter weather"
+                      )
+  }
 
-storm_data_summary$event_match[is.na(storm_data_summary$event_match)] <- 0
+storm_data_summary$event_match <- check_match(storm_data_summary$event_type)
 
 initial_matching <- aggregate(. ~ event_match,
                               data = storm_data_summary[, -1],
                               FUN = sum)
 
-percent_unmatched_count <- initial_matching$count[initial_matching$event_match == 0] / 
-  sum(initial_matching$count)
+percent_unmatched_count <- initial_matching$count[
+  initial_matching$event_match == FALSE] / sum(initial_matching$count)
 
-percent_unmatched_injuries <- initial_matching$injuries[initial_matching$event_match == 0] / 
-  sum(initial_matching$injuries)
+percent_unmatched_injuries <- initial_matching$injuries[
+  initial_matching$event_match == FALSE] / sum(initial_matching$injuries)
 
-percent_unmatched_fatalities <- initial_matching$fatalities[initial_matching$event_match == 0] / 
-  sum(initial_matching$fatalities)
+percent_unmatched_fatalities <- initial_matching$fatalities[
+  initial_matching$event_match == FALSE] / sum(initial_matching$fatalities)
 
-percent_unmatched_economic_damage <- initial_matching$economic_damage[initial_matching$event_match == 0] / 
+percent_unmatched_economic_damage <- initial_matching$economic_damage[initial_matching$event_match == FALSE] / 
   sum(initial_matching$economic_damage)
 ```
 
@@ -369,130 +336,157 @@ pander(event_type_list)
 Now I'm going to clean up some of the obvious event_types errors.
 
 ```{r textreplacement}
-storm_data_summary$event_type[grep("^coastalflood", storm_data_summary$event_type)] <- "coastalflood"
-storm_data_summary$event_type[storm_data_summary$event_type == "erosioncstlflood"] <- "coastalflood"
-storm_data_summary$event_type[storm_data_summary$event_type == "tidalflooding"] <- "coastalflood"
+adjust_events <- function(f_event_type) {
+  # Check if correct
+  if (check_match(f_event_type)) 
+    return(f_event_type) 
+  
+  # Marine Thunderstorm Wind
+  if (grepl("(?=marine)+(?=.*tstm)", f_event_type, perl = TRUE))
+    return("marine thunderstorm wind")
+  
+  # Coastal Flood
+  if (grepl("^(?=(coastal|erosion|tidal))+(?=.*flood)+", f_event_type, perl = TRUE)) 
+    return("coastal flood")
+  
+  # Cold Wind Chill
+  if (grepl("^(cold|extended)+", f_event_type)) 
+    return("cold wind chill")
+  
+  # Dense Fog
+  if (grepl(".*(fog)+", f_event_type)) 
+    return("dense fog")
+  
+  # Drought
+  if (grepl("^(drought)+", f_event_type)) 
+    return("drought")
+  
+  # Dust Devil
+  if (grepl("^(dust devil)+", f_event_type)) 
+    return("dust devil")
+  
+  # Extreme Cold Wind Chill
+  if (grepl("^(?=(extreme|record))(?=.*(cold|wind))", f_event_type, perl = TRUE)) 
+    return("extreme cold wind chill")
+  
+  # Flash Flood
+  if (grepl("(flash)+", f_event_type, perl = TRUE)) 
+    return("flash flood")
+  
+  if (grepl("(rapidly)+", f_event_type)) return("flash flood")
 
-storm_data_summary$event_type[storm_data_summary$event_type == "extendedcold"] <- "coldwindchill"
-storm_data_summary$event_type[grep("^cold", storm_data_summary$event_type)] <- "coldwindchill"
-storm_data_summary$event_type[storm_data_summary$event_type == "recordcold"] <- "coldwindchill"
+  # Thunderstorm
+  if (grepl("^(?!non)(?=.*(thunderstorm|tstm|thune|tund|rtor|deer|restor))+", f_event_type, perl = TRUE))
+    return("thunderstorm wind")
+  
+  # Lakeshore Flood
+  if (grepl("(?=lake)+(?=.*flood)", f_event_type, perl = TRUE))
+    return("lakeshore flood")
+  
+  # Frost Freeze
+  if (grepl("(frost|freeze)+", f_event_type))
+    return("frost freeze")
+  
+  # Hail
+  if (grepl("^(?!(gusty))(?=.*hail)+", f_event_type, perl = TRUE))
+    return("hail")
 
-storm_data_summary$event_type[storm_data_summary$event_type == "fog"] <- "densefog"
+  # Excessive Heat
+  if (grepl("(?=record)(?=.*heat)", f_event_type, perl = TRUE))
+    return("excessive heat")
+  
+  # Heat
+  if (grepl("(heat|warm)+", f_event_type))
+    return("heat")
 
-storm_data_summary$event_type[storm_data_summary$event_type == "droughtexcessiveheat"] <- "drought"
+  # High Wind
+  if (grepl("^(?=(high|gusty))+(?=.*wind)+", f_event_type, perl = TRUE))
+    return("high wind")
+  
+  # Lightning
+  if (grepl("(lightn|lignt)", f_event_type))
+    return("lightning")
+  
+  # Heavy Rain
+  if (grepl("(?=(heavy|hvy|exc|torr))+(?=.*rain)", f_event_type, perl = TRUE))
+    return("heavy rain")
+  
+  # Heavy Snow
+  if (grepl("^(snow|heavy sn|excessive sn)", f_event_type))
+    return("heavy snow")
+  
+  # Rip Current
+  if (grepl("^(rip)", f_event_type))
+    return("rip current")
+  
+  # High Surf
+  if (grepl("(surf)$", f_event_type))
+    return("high surf")
+  
+  if (grepl("^(heavy surf)", f_event_type))
+    return("high surf")
+  
+  # High Swells
+  if (grepl("swell", f_event_type))
+    return("high swells")
+  
+  # Hurricane Typhoon
+  if (grepl("(hurricane|typhoon)", f_event_type))
+    return("hurricane typhoon")
+  
+  # Storm Surge Tide
+  if (grepl("surge", f_event_type))
+    return("storm surge tide")
+  
+  # Strong Wind
+  if (grepl("(?=(strong|(storm force)))+(?=.*wind)+", f_event_type, perl = TRUE))
+    return("strong wind")
+  
+  # High Swells
+  if (grepl("(?=(waves| seas))+(?!.*snow)", f_event_type, perl = TRUE))
+    return("high swells")
+  
+  # Tornado
+  if (grepl("^(tornado|landspout)", f_event_type))
+    return("tornado")
+  
+  # Tropical Storm
+  if (grepl("^tropical", f_event_type))
+    return("tropical storm")
+  
+  # Water Spout
+  if (grepl("(spout)", f_event_type))
+    return("water spout")
+  
+  # Wildfire
+  if (grepl("fire", f_event_type))
+    return("wildfire")
+  
+  # Winter Storm
+  if (grepl("(?=winter)+(?=.*storm)+", f_event_type, perl = TRUE))
+    return("winter storm")
+  
+  # Winter Weather
+  if (grepl("^(winter|wintry)", f_event_type))
+    return("winter weather")
+  
+  # Flood
+  if (grepl("(flood|fld)", f_event_type))
+    return("flood")
+}
 
-storm_data_summary$event_type[storm_data_summary$event_type == "dustdevilwaterspout"] <- "dustdevil"
+adjusted_events <- sapply(storm_data_summary$event_type, adjust_events)
 
-storm_data_summary$event_type[storm_data_summary$event_type == "extremecold"] <- "extremecoldwindchill"
-storm_data_summary$event_type[storm_data_summary$event_type == "extremewindchill"] <- "extremecoldwindchill"
-
-storm_data_summary$event_type[grep("^flashflood", storm_data_summary$event_type)] <- "flashflood"
-storm_data_summary$event_type[grep("^floodflash", storm_data_summary$event_type)] <- "flashflood"
-storm_data_summary$event_type[storm_data_summary$event_type == "rapidlyrisingwater"] <- "flashflood"
-
-storm_data_summary$event_type[grep("^flood", storm_data_summary$event_type)] <- "flood"
-storm_data_summary$event_type[storm_data_summary$event_type == "breakupflooding"] <- "flood"
-storm_data_summary$event_type[storm_data_summary$event_type == "riverandstreamflood"] <- "flood"
-storm_data_summary$event_type[grep("^riverflood", storm_data_summary$event_type)] <- "flood"
-storm_data_summary$event_type[grep("^urbanflood", storm_data_summary$event_type)] <- "flood"
-storm_data_summary$event_type[storm_data_summary$event_type == "urbanandsmallstreamfloodin"] <- "flood"
-storm_data_summary$event_type[storm_data_summary$event_type == "urbansmallstreamflood"] <- "flood"
-storm_data_summary$event_type[storm_data_summary$event_type == "urbansmlstreamfld"] <- "flood"
-storm_data_summary$event_type[storm_data_summary$event_type == "mudslidesurbanflooding"] <- "flood"
-storm_data_summary$event_type[storm_data_summary$event_type == "ruralflood"] <- "flood"
-
-storm_data_summary$event_type[grep("freeze$", storm_data_summary$event_type)] <- "frostfreeze"
-storm_data_summary$event_type[grep("frost$", storm_data_summary$event_type)] <- "frostfreeze"
-
-storm_data_summary$event_type[grep("^hail", storm_data_summary$event_type)] <- "hail"
-storm_data_summary$event_type[storm_data_summary$event_type == "gustywindhail"] <- "hail"
-storm_data_summary$event_type[storm_data_summary$event_type == "smallhail"] <- "hail"
-
-storm_data_summary$event_type[grep("^heat", storm_data_summary$event_type)] <- "heat"
-storm_data_summary$event_type[storm_data_summary$event_type == "recordheat"] <- "heat"
-storm_data_summary$event_type[storm_data_summary$event_type == "warmweather"] <- "heat"
-
-storm_data_summary$event_type[grep("^heavyrain", storm_data_summary$event_type)] <- "heavyrain"
-storm_data_summary$event_type[storm_data_summary$event_type == "hvyrain"] <- "heavyrain"
-storm_data_summary$event_type[storm_data_summary$event_type == "excessiverainfall"] <- "heavyrain"
-storm_data_summary$event_type[storm_data_summary$event_type == "torrentialrainfall"] <- "heavyrain"
-
-storm_data_summary$event_type[grep("^heavysnow", storm_data_summary$event_type)] <- "heavysnow"
-storm_data_summary$event_type[grep("^snow", storm_data_summary$event_type)] <- "heavysnow"
-storm_data_summary$event_type[storm_data_summary$event_type == "excessivesnow"] <- "heavysnow"
-
-storm_data_summary$event_type[grep("^heavysurf", storm_data_summary$event_type)] <- "highsurf"
-storm_data_summary$event_type[grep("^highsurf", storm_data_summary$event_type)] <- "highsurf"
-storm_data_summary$event_type[storm_data_summary$event_type == "hazardoussurf"] <- "highsurf"
-
-storm_data_summary$event_type[storm_data_summary$event_type == "heavyswells"] <- "highswells"
-
-storm_data_summary$event_type[grep("^highwind", storm_data_summary$event_type)] <- "highwind"
-storm_data_summary$event_type[grep("^gustywind", storm_data_summary$event_type)] <- "highwind"
-
-storm_data_summary$event_type[grep("^hurricane", storm_data_summary$event_type)] <- "hurricanetyphoon"
-storm_data_summary$event_type[storm_data_summary$event_type == "typhoon"] <- "hurricanetyphoon"
-
-storm_data_summary$event_type[storm_data_summary$event_type == "icejamfloodminor"] <- "icejamflooding"
-storm_data_summary$event_type[storm_data_summary$event_type == "iceonroad"] <- "icyroads"
-storm_data_summary$event_type[storm_data_summary$event_type == "iceroads"] <- "icyroads"
-
-storm_data_summary$event_type[storm_data_summary$event_type == "lakeflood"] <- "lakeshoreflood"
-
-storm_data_summary$event_type[storm_data_summary$event_type == "landslides"] <- "landslide"
-
-storm_data_summary$event_type[storm_data_summary$event_type == "lightsnowfall"] <- "lightsnow"
-
-storm_data_summary$event_type[grep("^lightning", storm_data_summary$event_type)] <- "lightning"
-storm_data_summary$event_type[storm_data_summary$event_type == "ligntning"] <- "lightning"
-
-storm_data_summary$event_type[storm_data_summary$event_type == "marinetstmwind"] <- "marinethunderstormwind"
-
-storm_data_summary$event_type[storm_data_summary$event_type == "mixedprecip"] <- "mixedprecipitation"
-
-storm_data_summary$event_type[storm_data_summary$event_type == "mudslides"] <- "mudslide"
-
-storm_data_summary$event_type[grep("^ripcurrent", storm_data_summary$event_type)] <- "ripcurrent"
-
-storm_data_summary$event_type[storm_data_summary$event_type == "stormsurge"] <- "stormsurgetide"
-
-storm_data_summary$event_type[storm_data_summary$event_type == "strongwinds"] <- "strongwind"
-storm_data_summary$event_type[storm_data_summary$event_type == "stormforcewinds"] <- "strongwind"
-storm_data_summary$event_type[storm_data_summary$event_type == "gustywinds"] <- "strongwind"
-storm_data_summary$event_type[storm_data_summary$event_type == "icestrongwinds"] <- "strongwind"
-
-storm_data_summary$event_type[grep("^thunderstorm", storm_data_summary$event_type)] <- "thunderstormwind"
-storm_data_summary$event_type[grep("^tstmwind", storm_data_summary$event_type)] <- "thunderstormwind"
-storm_data_summary$event_type[grep("^severethunderstorm", storm_data_summary$event_type)] <- "thunderstormwind"
-storm_data_summary$event_type[storm_data_summary$event_type == "thunerstormwinds"] <- "thunderstormwind"
-storm_data_summary$event_type[storm_data_summary$event_type == "thunderstormwins"] <- "thunderstormwind"
-storm_data_summary$event_type[storm_data_summary$event_type == "tunderstormwind"] <- "thunderstormwind"
-storm_data_summary$event_type[storm_data_summary$event_type == "thundeerstormwinds"] <- "thunderstormwind"
-storm_data_summary$event_type[storm_data_summary$event_type == "thunderestormwinds"] <- "thunderstormwind"
-storm_data_summary$event_type[storm_data_summary$event_type == "thundertormwinds"] <- "thunderstormwind"
-
-storm_data_summary$event_type[grep("^tornado", storm_data_summary$event_type)] <- "tornado"
-
-storm_data_summary$event_type[grep("^tropicalstorm", storm_data_summary$event_type)] <- "tropicalstorm"
-
-storm_data_summary$event_type[storm_data_summary$event_type == "unseasonablecold"] <- "unseasonablycold"
-
-storm_data_summary$event_type[storm_data_summary$event_type == "waterspouttornado"] <- "waterspout"
-
-storm_data_summary$event_type[grep("^wildforestfire", storm_data_summary$event_type)] <- "wildfire"
-storm_data_summary$event_type[grep("fires$", storm_data_summary$event_type)] <- "wildfire"
-storm_data_summary$event_type[storm_data_summary$event_type == "brushfire"] <- "wildfire"
-
-storm_data_summary$event_type[grep("^wind", storm_data_summary$event_type)] <- "wind"
-
-storm_data_summary$event_type[storm_data_summary$event_type == "winterstormhighwinds"] <- "winterstorm"
-
-storm_data_summary$event_type[grep("^winterweather", storm_data_summary$event_type)] <- "winterweather"
-storm_data_summary$event_type[storm_data_summary$event_type == "wintrymix"] <- "winterweather"
+for (i in 1:nrow(storm_data_summary)) {
+  if (is.null(adjusted_events[[i]])) {"delete"
+    } else {
+      storm_data_summary$event_type[i] <- adjusted_events[[i]]
+    }
+}
 
 storm_data_summary <- aggregate(. ~ event_type,
-                                data = storm_data_summary,
-                                FUN = sum)
+  data = storm_data_summary[storm_data_summary$event_type != "delete", ],
+  FUN = sum)
 ```
 
 Things are a bit more clear now. Let's see how these align to the 48 event types
@@ -501,70 +495,23 @@ now.
 ***
 
 ```{r sortto48}
-storm_data_summary$event_match[storm_data_summary$event_type == "astronomicallowtide"]    <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "avalanche"]              <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "blizzard"]               <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "coastalflood"]           <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "coldwindchill"]          <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "debrisflow"]             <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "densefog"]               <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "densesmoke"]             <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "drought"]                <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "dustdevil"]              <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "duststorm"]              <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "excessiveheat"]          <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "extremecoldwindchill"]   <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "flashflood"]             <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "flood"]                  <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "frostfreeze"]            <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "funnelcloud"]            <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "freezingfog"]            <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "hail"]                   <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "heat"]                   <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "heavyrain"]              <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "heavysnow"]              <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "highsurf"]               <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "highwind"]               <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "hurricanetyphoon"]       <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "icestorm"]               <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "lakeeffectsnow"]         <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "lakeshoreflood"]         <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "lightning"]              <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "marinehail"]             <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "marinehighwind"]         <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "marinestrongwind"]       <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "marinethunderstormwind"] <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "ripcurrent"]             <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "seiche"]                 <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "sleet"]                  <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "stormsurgetide"]         <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "strongwind"]             <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "thunderstormwind"]       <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "tornado"]                <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "tropicaldepression"]     <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "tropicalstorm"]          <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "tsunami"]                <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "volcanicash"]            <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "waterspout"]             <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "wildfire"]               <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "winterstorm"]            <- 1
-storm_data_summary$event_match[storm_data_summary$event_type == "winterweather"]          <- 1
+storm_data_summary$event_match <- check_match(storm_data_summary$event_type)
 
 final_matching <- aggregate(. ~ event_match,
                             data = storm_data_summary[, -1],
                             FUN = sum)
 
-percent_unmatched_count_final <- final_matching$count[final_matching$event_match == 0] / 
-  sum(final_matching$count)
+percent_unmatched_count_final <- final_matching$count[
+  final_matching$event_match == FALSE] / sum(final_matching$count)
 
-percent_unmatched_injuries_final <- final_matching$injuries[final_matching$event_match == 0] / 
-  sum(final_matching$injuries)
+percent_unmatched_injuries_final <- final_matching$injuries[
+  final_matching$event_match == FALSE] / sum(final_matching$injuries)
 
-percent_unmatched_fatalities_final <- final_matching$fatalities[final_matching$event_match == 0] / 
-  sum(final_matching$fatalities)
+percent_unmatched_fatalities_final <- final_matching$fatalities[
+  final_matching$event_match == FALSE] / sum(final_matching$fatalities)
 
-percent_unmatched_economic_damage_final <- final_matching$economic_damage[final_matching$event_match == 0] / 
-  sum(final_matching$economic_damage)
+percent_unmatched_economic_damage_final <- final_matching$economic_damage[
+  final_matching$event_match == FALSE] / sum(final_matching$economic_damage)
 ```
 
 After more aggressive remapping, I find that when comparing to the expected 48
@@ -578,54 +525,13 @@ That's an acceptable error rate.
 A little text adjustment for the final plotting and analysis section.
 
 ``` {r finaltextnaming}
-storm_data_summary$event_type[storm_data_summary$event_type == "astronomicallowtide"] <- "Astronomical Low Tide"
-storm_data_summary$event_type[storm_data_summary$event_type == "avalanche"] <- "Avalanche"
-storm_data_summary$event_type[storm_data_summary$event_type == "blizzard"] <- "Blizzard"
-storm_data_summary$event_type[storm_data_summary$event_type == "coastalflood"] <- "Coastal Flood"
-storm_data_summary$event_type[storm_data_summary$event_type == "coldwindchill"] <- "Cold/Wind Chill"
-storm_data_summary$event_type[storm_data_summary$event_type == "debrisflow"] <- "Debris Flow"
-storm_data_summary$event_type[storm_data_summary$event_type == "densefog"] <- "Dense Fog"
-storm_data_summary$event_type[storm_data_summary$event_type == "densesmoke"] <- "Dense Smoke"
-storm_data_summary$event_type[storm_data_summary$event_type == "drought"] <- "Drought"
-storm_data_summary$event_type[storm_data_summary$event_type == "dustdevil"] <- "Dust Devil"
-storm_data_summary$event_type[storm_data_summary$event_type == "duststorm"] <- "Dust Storm"
-storm_data_summary$event_type[storm_data_summary$event_type == "excessiveheat"] <- "Excessive Heat"
-storm_data_summary$event_type[storm_data_summary$event_type == "extremecoldwindchill"] <- "Extreme Cold/Wind Chill"
-storm_data_summary$event_type[storm_data_summary$event_type == "flashflood"] <- "Flash Flood"
-storm_data_summary$event_type[storm_data_summary$event_type == "flood"] <- "Flood"
-storm_data_summary$event_type[storm_data_summary$event_type == "frostfreeze"] <- "Frost/Freeze"
-storm_data_summary$event_type[storm_data_summary$event_type == "funnelcloud"] <- "Funnel Cloud"
-storm_data_summary$event_type[storm_data_summary$event_type == "freezingfog"] <- "Freezing Fog"
-storm_data_summary$event_type[storm_data_summary$event_type == "hail"] <- "Hail"
-storm_data_summary$event_type[storm_data_summary$event_type == "heat"] <- "Heat"
-storm_data_summary$event_type[storm_data_summary$event_type == "heavyrain"] <- "Heavy Rain"
-storm_data_summary$event_type[storm_data_summary$event_type == "heavysnow"] <- "Heavy Snow"
-storm_data_summary$event_type[storm_data_summary$event_type == "highsurf"] <- "High Surf"
-storm_data_summary$event_type[storm_data_summary$event_type == "highwind"] <- "High Wind"
-storm_data_summary$event_type[storm_data_summary$event_type == "hurricanetyphoon"] <- "Hurricane (Typhoon)"
-storm_data_summary$event_type[storm_data_summary$event_type == "icestorm"] <- "Ice Storm"
-storm_data_summary$event_type[storm_data_summary$event_type == "lakeeffectsnow"] <- "Lake-Effect Snow"
-storm_data_summary$event_type[storm_data_summary$event_type == "lakeshoreflood"] <- "Lakeshore Flood"
-storm_data_summary$event_type[storm_data_summary$event_type == "lightning"] <- "Lightning"
-storm_data_summary$event_type[storm_data_summary$event_type == "marinehail"] <- "Marine Hail"
-storm_data_summary$event_type[storm_data_summary$event_type == "marinehighwind"] <- "Marine High Wind"
-storm_data_summary$event_type[storm_data_summary$event_type == "marinestrongwind"] <- "Marine Strong Wind"
-storm_data_summary$event_type[storm_data_summary$event_type == "marinethunderstormwind"] <- "Marine Thunderstorm Wind"
-storm_data_summary$event_type[storm_data_summary$event_type == "ripcurrent"] <- "Rip Current"
-storm_data_summary$event_type[storm_data_summary$event_type == "seiche"] <- "Seiche"
-storm_data_summary$event_type[storm_data_summary$event_type == "sleet"] <- "Sleet"
-storm_data_summary$event_type[storm_data_summary$event_type == "stormsurgetide"] <- "Storm Surge/Tide"
-storm_data_summary$event_type[storm_data_summary$event_type == "strongwind"] <- "Strong Wind"
-storm_data_summary$event_type[storm_data_summary$event_type == "thunderstormwind"] <- "Thunderstorm Wind"
-storm_data_summary$event_type[storm_data_summary$event_type == "tornado"] <- "Tornado"
-storm_data_summary$event_type[storm_data_summary$event_type == "tropicaldepression"] <- "Tropical Depression"
-storm_data_summary$event_type[storm_data_summary$event_type == "tropicalstorm"] <- "Tropical Storm"
-storm_data_summary$event_type[storm_data_summary$event_type == "tsunami"] <- "Tsunami"
-storm_data_summary$event_type[storm_data_summary$event_type == "volcanicash"] <- "Volcanic Ash"
-storm_data_summary$event_type[storm_data_summary$event_type == "waterspout"] <- "Waterspout"
-storm_data_summary$event_type[storm_data_summary$event_type == "wildfire"] <- "Wildfire"
-storm_data_summary$event_type[storm_data_summary$event_type == "winterstorm"] <- "Winter Storm"
-storm_data_summary$event_type[storm_data_summary$event_type == "winterweather"] <- "Winter Weather"
+storm_data_summary$event_type <- toTitleCase(storm_data_summary$event_type)
+storm_data_summary$event_type[storm_data_summary$event_type == "Cold Wind Chill"] <- "Cold/Wind Chill"
+storm_data_summary$event_type[storm_data_summary$event_type == "Extreme Cold Wind Chill"] <- "Extreme Cold/Wind Chill"
+storm_data_summary$event_type[storm_data_summary$event_type == "Frost Freeze"] <- "Frost/Freeze"
+storm_data_summary$event_type[storm_data_summary$event_type == "Hurricane Typhoon"] <- "Hurricane (Typhoon)"
+storm_data_summary$event_type[storm_data_summary$event_type == "Lake Effect Snow"] <- "Lake-Effect Snow"
+storm_data_summary$event_type[storm_data_summary$event_type == "Storm Surge Tide"] <- "Storm Surge/Tide"
 ```
 
 ***
