@@ -1,7 +1,7 @@
 ---
 title: "Population Health Impact and Economic Consequences of Storms"
 author: "Ben Kesseler"
-date: "May 22, 2016"
+date: "May 24, 2016"
 output: html_document
 ---
 
@@ -53,7 +53,8 @@ Library packages are loaded for the entire analysis. Code output has been
 suppressed for this code only.
 
 ```{r libraries, results = 'hide', message = FALSE}
-libraries <- c("ggplot2",
+libraries <- c("plyr",
+               "ggplot2",
                "knitr",
                "tools",
                "readr",
@@ -85,9 +86,9 @@ storm_data <- read_csv(target_local_archive, na = "NA")
 ## Initial Cleaning
 
 Each row is a very detailed description of a location, event type, injuries,
-fatalities, and damage, if any. Actual logical events such as a regional storm 
-or other weather impact might entail many rows, and there is no obvious way to 
-usefully aggregate the rows to logical events.
+fatalities, and damage, if any. However, actual logical events such as a 
+regional storm or other weather impact might entail many rows, and there is no 
+obvious way to usefully aggregate the rows to logical events.
 
 The analysis covers the entire United States, so location is not important.
 
@@ -350,19 +351,19 @@ adjust_events <- function(f_event_type) {
     return("coastal flood")
   
   # Cold Wind Chill
-  if (grepl("^(cold|extended)+", f_event_type)) 
+  if (grepl("^(cold|extended)", f_event_type)) 
     return("cold wind chill")
   
   # Dense Fog
-  if (grepl(".*(fog)+", f_event_type)) 
+  if (grepl("(?!freezing)(?=.*fog)+", f_event_type, perl = TRUE)) 
     return("dense fog")
   
   # Drought
-  if (grepl("^(drought)+", f_event_type)) 
+  if (grepl("^(drought)", f_event_type)) 
     return("drought")
   
   # Dust Devil
-  if (grepl("^(dust devil)+", f_event_type)) 
+  if (grepl("^(dust devil)", f_event_type)) 
     return("dust devil")
   
   # Extreme Cold Wind Chill
@@ -370,10 +371,10 @@ adjust_events <- function(f_event_type) {
     return("extreme cold wind chill")
   
   # Flash Flood
-  if (grepl("(flash)+", f_event_type, perl = TRUE)) 
+  if (grepl("(flash)", f_event_type)) 
     return("flash flood")
   
-  if (grepl("(rapidly)+", f_event_type)) return("flash flood")
+  if (grepl("(rapidly)", f_event_type)) return("flash flood")
 
   # Thunderstorm
   if (grepl("^(?!non)(?=.*(thunderstorm|tstm|thune|tund|rtor|deer|restor))+", f_event_type, perl = TRUE))
@@ -384,7 +385,7 @@ adjust_events <- function(f_event_type) {
     return("lakeshore flood")
   
   # Frost Freeze
-  if (grepl("(frost|freeze)+", f_event_type))
+  if (grepl("(frost|freeze)", f_event_type))
     return("frost freeze")
   
   # Hail
@@ -396,11 +397,11 @@ adjust_events <- function(f_event_type) {
     return("excessive heat")
   
   # Heat
-  if (grepl("(heat|warm)+", f_event_type))
+  if (grepl("(heat|warm)", f_event_type))
     return("heat")
 
   # High Wind
-  if (grepl("^(?=(high|gusty))+(?=.*wind)+", f_event_type, perl = TRUE))
+  if (grepl("^(?=(high|gusty))(?=.*wind)", f_event_type, perl = TRUE))
     return("high wind")
   
   # Lightning
@@ -408,7 +409,7 @@ adjust_events <- function(f_event_type) {
     return("lightning")
   
   # Heavy Rain
-  if (grepl("(?=(heavy|hvy|exc|torr))+(?=.*rain)", f_event_type, perl = TRUE))
+  if (grepl("(?=(heavy|hvy|exc|torr))(?=.*rain)", f_event_type, perl = TRUE))
     return("heavy rain")
   
   # Heavy Snow
@@ -539,122 +540,91 @@ storm_data_summary$event_type[storm_data_summary$event_type == "Storm Surge Tide
 I'm going to prepare my plots here, so the results section stays clean.
 
 ```{r figure1prep}
-storm_data_final <- storm_data_summary[storm_data_summary$event_match == 1, ]
-storm_data_final$event_type <- factor(storm_data_final$event_type)
+storm_data_final <- storm_data_summary[storm_data_summary$event_match == TRUE, ]
 
 storm_data_final$combined_health <- storm_data_final$injuries + 
                                     storm_data_final$fatalities
 
-storm_data_final$event_type <- factor(storm_data_final$event_type,
-                                      levels = storm_data_final$event_type[
-                                        order(storm_data_final$combined_health,
+storm_data_plot1 <- storm_data_final[storm_data_final$combined_health > 0, ]
+
+storm_data_plot1$event_type <- factor(storm_data_plot1$event_type,
+                                      levels = storm_data_plot1$event_type[
+                                        order(storm_data_plot1$combined_health,
                                               decreasing = TRUE)])
 
-storm_data_final_plot1 <- head(storm_data_final[
-  order(-storm_data_final$combined_health), ], 20)
+storm_data_plot1$foi_ratio <- storm_data_plot1$fatalities / storm_data_plot1$injuries
 
-storm_data_final_plot1 <- melt(data = storm_data_final_plot1[, c("event_type",
-                                                                 "fatalities",
-                                                                 "injuries")
-                                                            ], id="event_type")
+storm_data_plot1 <- head(storm_data_plot1[order(-storm_data_plot1$combined_health), ], 20)
 
-storm_data_final_plot1$variable <- as.factor(toTitleCase(
-    as.character(storm_data_final_plot1$variable)))
-
-First_Plot <- ggplot(data = storm_data_final_plot1,
-                       aes(x = event_type, y = value, fill = variable)) +
-                geom_bar(stat = "identity", position = "dodge") +
-                theme_bw() +
-                coord_flip() +
-                ggtitle("Injuries & Fatalities by Event Type") +
-                xlab("Event Types") +
-                ylab("Injuries & Fatalities") + 
-                scale_fill_manual(values = c(Fatalities = "red", Injuries = "orange")) +
-                theme(legend.position = c(0.9, 0.8), 
-                      legend.title = element_blank(),
-                      panel.grid.major.y = element_line(colour = "#808080"))
-
-storm_data_final_plot2 <- head(storm_data_final[
-  order(-storm_data_final$combined_health), ], 20)
-
-Second_Plot <- ggplot(data = storm_data_final_plot2, aes(x = injuries, 
-                                                         y = fatalities)) + 
-  geom_point() +
+Figure_1 <- ggplot(data = storm_data_plot1, aes(x = injuries, 
+                                                y = fatalities, 
+                                                fill = foi_ratio)) + 
+  geom_point(aes(fill = foi_ratio), shape = 21, size = 2) +
   theme_bw() +
   ggtitle("Injuries vs Fatalities by Event Type") +
   xlab("Injuries") +
   ylab("Fatalities") +
-  geom_label_repel(data = subset(storm_data_final_plot2, 
-                                 (injuries > 1500 | fatalities > 250)),
-                   aes(label = event_type))
-
-storm_data_final_plot3 <- storm_data_final_plot2
-storm_data_final_plot3$ratio <- storm_data_final_plot2$fatalities / storm_data_final_plot2$injuries
-
-Third_Plot <- ggplot(data = storm_data_final_plot3, aes(x = event_type, y = ratio, fill = ratio)) + 
-  theme_bw() + 
-  ggtitle("Fatality to Injury Ratio by Event Type") +
-  xlab("Event Types") +
-  ylab("Ratio of Fatalities to Injuries") + 
-  geom_bar(stat = "identity") + 
-  coord_flip() +
-  scale_fill_gradient("ratio", low = "orange", high = "red") +
-  theme(legend.position = c(0.85, 0.15),
-        legend.title = element_blank(),
-        legend.direction = "horizontal")
+  scale_fill_gradient("Fatalities over Injuries", low = "green", high = "red") +
+  geom_label_repel(data = subset(storm_data_plot1, 
+                                 (injuries > 1400 | fatalities > 195)),
+                   aes(label = event_type)) +
+  theme(legend.position = c(0.94, 0.1),
+        legend.direction = "vertical") +
+  guides(fill = guide_colorbar(title.position = "left", title.theme = element_text(size=10, angle = 90)))
 ```
-
 
 ```{r figure2prep}
-storm_data_final$event_type <- factor(storm_data_final$event_type,
-                                      levels = storm_data_final$event_type[
-                                        order(storm_data_final$economic_damage,
+storm_data_plot2 <- storm_data_final[storm_data_final$economic_damage > 0, ]
+
+storm_data_plot2$event_type <- factor(storm_data_plot2$event_type,
+                                      levels = storm_data_plot2$event_type[
+                                        order(storm_data_plot2$economic_damage,
                                               decreasing = TRUE)])
 
-storm_data_final_plot4 <- head(storm_data_final[
-  order(-storm_data_final$economic_damage), ], 20)
+storm_data_plot2 <- head(storm_data_plot2[
+  order(-storm_data_plot2$economic_damage), ], 20)
 
-storm_data_final_plot4$economic_damage <- storm_data_final_plot4$economic_damage / 1000000000
+storm_data_plot2$economic_damage <- storm_data_plot2$economic_damage / 1000000000
 
-Fourth_Plot <- ggplot(data = storm_data_final_plot4,
-                       aes(x = event_type, y = economic_damage, fill = economic_damage)) +
-                geom_bar(stat = "identity") +
-                theme_bw() +
-                coord_flip() +
-                ggtitle("Economic Damage by Event Type") +
-                xlab("Event Types") +
-                ylab("Economic Damage in Billions of USD (unadjusted)") + 
-                scale_fill_gradient("economic_damage", low = "green", high="dark green") +
-                theme(legend.position = c(0.85, 0.9), 
-                      legend.direction = "horizontal",
-                      legend.title = element_blank(),
-                      panel.grid.major.y = element_line(colour = "#808080"))
+Figure_2 <- ggplot(data = storm_data_plot2,
+                   aes(x = event_type, y = economic_damage, fill = economic_damage)) +
+  geom_bar(stat = "identity") +
+  theme_bw() +
+  coord_flip() +
+  ggtitle("Economic Damage by Event Type") +
+  xlab("Event Types") +
+  ylab("Economic Damage in Billions of USD (unadjusted)") + 
+  scale_fill_gradient("Billions USD", low = "green", high="dark green") +
+  theme(legend.position = c(0.9, 0.9), 
+        legend.direction = "horizontal",
+        panel.grid.major.y = element_line(colour = "#808080")) +
+  guides(fill = guide_colorbar(title.position = "top", title.theme = element_text(size=10, angle = 0)))
 ```
 
-***
-
 ```{r figure3prep}
-Fifth_Plot <- ggplot(data = storm_data_final, aes(x = economic_damage/1000000000, 
-                                                  y = injuries)) + 
-  geom_point() +
-  theme_bw() +
-  ggtitle("Economic Damage vs Injuries by Event Type") +
-  xlab("Economic Damage") +
-  ylab("Injuries") +
-  geom_label_repel(data = subset(storm_data_final, 
-                                 (injuries > 2500 | economic_damage > 15000000000)),
-                   aes(label = event_type))
+storm_data_plot3 <- storm_data_final[, c("event_type", "fatalities", "injuries",
+                                         "economic_damage", "combined_health")]
 
-Sixth_Plot <- ggplot(data = storm_data_final, aes(x = economic_damage/1000000000, 
-                                                  y = fatalities)) + 
-  geom_point() +
+storm_data_plot3 <- head(storm_data_plot3[order(-storm_data_plot3$combined_health), ], 20)
+
+storm_data_plot3$foi_ratio <- storm_data_plot3$fatalities / storm_data_plot3$injuries
+
+storm_data_plot3$economic_damage <- log10(storm_data_plot3$economic_damage)
+storm_data_plot3$combined_health <- log10(storm_data_plot3$combined_health)
+
+Figure_3 <- ggplot(data = storm_data_plot3, aes(x = economic_damage, 
+                                                  y = combined_health,
+                                                 fill = foi_ratio)) + 
+  geom_point(aes(fill = foi_ratio), shape = 21, size = 5) +
   theme_bw() +
-  ggtitle("Economic Damage vs Fatalities by Event Type") +
-  xlab("Economic Damage") +
-  ylab("Fatalities") +
-  geom_label_repel(data = subset(storm_data_final, 
-                                 (fatalities > 400 | economic_damage > 15000000000)),
-                   aes(label = event_type))
+  scale_fill_gradient("Fatalities over Injuries", low = "green", high = "red") +
+  ggtitle("Economic Damage vs Combined Health Impact by Event Type") +
+  xlab("Economic Damage (USD log10 scale)") +
+  ylab("Combined Health Impact (log10 scale)") +
+  geom_label_repel(aes(label = event_type)) +
+  theme(legend.position = c(0.06, 0.9),
+        legend.direction = "vertical") +
+  guides(fill = guide_colorbar(title.position = "left", title.theme = element_text(size=10, angle = 90)))
 ```
 
 # Results
@@ -664,19 +634,23 @@ Sixth_Plot <- ggplot(data = storm_data_final, aes(x = economic_damage/1000000000
 I need to examine the distribution of injuries, fatalaties, and economic damage
 by the event types present in this data.
 
-I'll be using top 20 for most of these analyses, to make the plots easier to 
-review.
+I'll be using top 20 event types (based on the variables being analyzed) for 
+these analyses, to make things easier to work with.
 
 Note, all of the preparation for these plots occurred above, in the data 
 processing section, but the plots are presented and discussed here.
 
-## Figure 1 - Injuries & Fatality Exploration
+## Figure 1 - Injuries & Fatalities Exploration
 
-```{r figure1, fig.align = "center", fig.width = 10, fig.height = 10, fig.cap = "The first plot shows injuries and fatalities for the top 20 event types. The second plot shows injuries vs fatalities for the same subset of events. The third plot shows the ratio of fatalities to injuries, to demonstrate which events are the most dangerous, independent of overall prevalence."}
-grid.arrange(First_Plot, Second_Plot, Third_Plot, ncol = 1)
+```{r figure1, fig.align = "center", fig.width = 10, fig.height = 10, fig.cap = "This plot shows fatalities vs injuries for the top 20 events by combined health impact. Points and labels are colored by the ratio of fatalities to injuries."}
+Figure_1
 ```
 
 ***
+
+__Excessive heat, heat, tornados, flash floods, and lightning are the most deadly
+event types, while tornados, floods, excessive heat, thunderstorm winds, and 
+lightning are the most injurious event types.__
 
 Fatalities and injuries seem to be correlated, although Tornados cause 
 signifigantly more injuries than any other event. However, Rip Currents are more
@@ -686,33 +660,53 @@ dangerous to life, independent of overall risk of encountering the events.
 
 ## Figure 2 - Economic Damage Exploration
 
-```{r figure2, fig.align = "center", fig.width = 10, fig.height = 4, fig.cap = "Economic Damage in Billions of USD is displayed, for the top 20 event types. Flood may be somewhat overstated as all flood events must have a damage statement, even if an estimate."}
-
-Fourth_Plot
+```{r figure2, fig.align = "center", fig.width = 10, fig.height = 5, fig.cap = "This plot shows economic damage in billions of USD, for the top 20 event types by economic damage. Bars are colored by the economic damage. The values have not been adjusted for inflation."}
+Figure_2
 ```
-
-Floods, hurricanes/typhoons, storm surges/tides, and tornados are the most
-damaging events, economically.
 
 ***
 
-## Figure 3 - Economic Damage vs Injuries & Fatalities by Event Type
+__Floods, hurricanes/typhoons, storm surges/tides, and tornados are the most
+damaging events, economically.__
 
-```{r figure3, fig.align = "center", fig.width = 10, fig.height = 4, fig.cap = "The first plot shows economic damages vs injuries for all event types. The second plot compares economics damages to fatalities."}
-grid.arrange(Fifth_Plot, Sixth_Plot, ncol = 2)
+Flood may be somewhat overstated as all flood 
+events are required to have a damage statement, even if an estimate.
+
+***
+
+## Figure 3 - Economic Damage vs Combined Health Impact
+
+```{r figure3, fig.align = "center", fig.width = 10, fig.height = 10, fig.cap = "This plot shows economic damage vs combined health impact (injuries + fatalities), both on a log10 scale, for the top 20 event types by combined health impact. Points and labels are colored by the ratio of fatalities to injuries, before log10 conversion."}
+Figure_3
 ```
+
+***
+
+__Event types are fairly evenly distributed on a log scale, in terms of both
+economic damage and combined health impact. __
+
+Rip Current still stands out as a very dangerous event, with extremely small 
+prevalence and near-zero economic impact.
 
 ***
 
 # Further Exploration
 
-This analysis did not cover events over time or by location, while data on both
-was available in the raw data. A further analysis could plot injuries, 
+### Location Analysis
+A further analysis could plot injuries, 
 fatalities, and economic damage as a density plot over the United States, by
-utilizing the latitude and longitude present in the data. Similarly, after 
-subsetting to post-1994 data to ensure consistent reporting methods, events
-and damages could be compared over time, to determine if any events are occuring
-more frequently, or are causing more impact, over time.
+utilizing the latitude and longitude present in the data.
+
+### Time Analysis
+After subsetting to post-1994 data to ensure consistent reporting methods, 
+events and damages could be compared over time, to determine if any events are 
+occuring more frequently, or are causing more impact, over time.
+
+### Logical Event Combinations
+Some events are logically connected, such as "heat" and "excessive heat", and
+might be combined to create a smaller set with more value for communication to
+the public, as the event types are currently defined for the meteorological 
+community.
 
 ***
 
