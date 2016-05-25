@@ -47,12 +47,12 @@ economic damages.
 
 # Data Processing
 
-## Loading the Raw Data
+### Loading the Raw Data
 
 Library packages are loaded for the entire analysis. Code output has been
 suppressed for this code only.
 
-```{r libraries, results = 'hide', message = FALSE}
+```{r libraries, results = 'hide', message = FALSE, warning = FALSE}
 libraries <- c("plyr",
                "ggplot2",
                "knitr",
@@ -67,8 +67,12 @@ libraries <- c("plyr",
 sapply(libraries, library, character.only = TRUE)
 ```
 
+***
+
 We start with the [NOAA Storm Data](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2)
 that is archived on the course website and documented [here](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf) and [here](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2FNCDC%20Storm%20Events-FAQ%20Page.pdf).
+
+***
 
 ```{r dataimport, cache = TRUE}
 source_url <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
@@ -83,7 +87,7 @@ storm_data <- read_csv(target_local_archive, na = "NA")
 
 ***
 
-## Initial Cleaning
+### Initial Cleaning
 
 Each row is a very detailed description of a location, event type, injuries,
 fatalities, and damage, if any. However, actual logical events such as a 
@@ -105,6 +109,8 @@ documenting their prevalence.
 
 I will also subset the data to any rows with non-0 injuries, fatalities, or
 economic damage.
+
+***
 
 ```{r datacleaning}
 storm_data_cleaned <- storm_data[storm_data$FATALITIES > 0  |
@@ -149,16 +155,18 @@ percent_unmappable_property <- 1 - mappable_exponents_property / nrow(storm_data
 
 percent_unmappable_crop <- 1 - mappable_exponents_crop / nrow(storm_data_cleaned)
 ```
-
+  
+***  
+  
 So `r percent(percent_unmappable_property)` of property damage records have
 unmappable exponents, and `r percent(percent_unmappable_crop)` of crop damage
 records have unmappable exponents. That's a very small percent of the records, 
-so treating them as 1 should be reasonable.
-
-***
-
+so treating them as 1 should be reasonable.  
+  
 I now convert things to a consistent numeric scale, so summation functions will
 work properly.
+
+***
 
 ```{r datacleaning2}
 scalar_mapping <- data.frame("property_damage_exponent" = c("B","M","K"),
@@ -200,10 +208,12 @@ storm_data_cleaned$economic_damage <- storm_data_cleaned$property_damage +
                                       storm_data_cleaned$crop_damage
 ```
 
-## Data Aggregation
+### Data Aggregation
 
 Now I will summarize the data at the level needed for plotting and further
 exploration - annual by event type.
+
+***
 
 ```{r dataaggregation}
 storm_data_cleaned <- storm_data_cleaned[, c("year",
@@ -240,16 +250,20 @@ panderOptions("table.split.table",Inf)
 pander(count_by_year_table)
 ```
 
+***
+
 It looks like there is a marked increase in the number of events in 1995. I am
 concerned that data from previous years doesn't accurately represent the
 distribution of event types, so I am restricting the analysis to 1995 and
 forward.
 
-## Event Type Clean-up
+### Event Type Clean-up
 
 Here I will summarize the data by event_type, for the years 1995 and after, and
 I will remove event types that have no fatalities, injuries, or economic damage,
 and begin cleaning event types.
+
+***
 
 ```{r datasubsetting}
 storm_data_summary <- storm_data_summary[storm_data_summary$year >= 1995, ]
@@ -309,6 +323,8 @@ percent_unmatched_economic_damage <- initial_matching$economic_damage[initial_ma
   sum(initial_matching$economic_damage)
 ```
 
+***
+
 After minimal text formatting, I find that when comparing to the expected 48
 event types, I'm unable to match `r percent(percent_unmatched_count)`
 of the non-zero events, which account for `r percent(percent_unmatched_economic_damage)`
@@ -317,9 +333,9 @@ and `r percent(percent_unmatched_fatalities)` of the fatalities.
 
 This clearly needs some work.
 
-***
-
 What event types remain?
+
+***
 
 ``` {r cleanup}
 event_type_list <- data.frame("event_type" = storm_data_summary[1:77, 1],
@@ -335,6 +351,8 @@ pander(event_type_list)
 ***
 
 Now I'm going to clean up some of the obvious event_types errors.
+
+***
 
 ```{r textreplacement}
 adjust_events <- function(f_event_type) {
@@ -490,6 +508,8 @@ storm_data_summary <- aggregate(. ~ event_type,
   FUN = sum)
 ```
 
+***
+
 Things are a bit more clear now. Let's see how these align to the 48 event types
 now.
 
@@ -515,6 +535,8 @@ percent_unmatched_economic_damage_final <- final_matching$economic_damage[
   final_matching$event_match == FALSE] / sum(final_matching$economic_damage)
 ```
 
+***
+
 After more aggressive remapping, I find that when comparing to the expected 48
 event types, I'm unable to match `r percent(percent_unmatched_count_final)`
 of the non-zero events, which account for `r percent(percent_unmatched_economic_damage_final)`
@@ -524,6 +546,8 @@ and `r percent(percent_unmatched_fatalities_final)` of the fatalities.
 That's an acceptable error rate.
 
 A little text adjustment for the final plotting and analysis section.
+
+***
 
 ``` {r finaltextnaming}
 storm_data_summary$event_type <- toTitleCase(storm_data_summary$event_type)
@@ -538,6 +562,8 @@ storm_data_summary$event_type[storm_data_summary$event_type == "Storm Surge Tide
 ***
 
 I'm going to prepare my plots here, so the results section stays clean.
+
+***
 
 ```{r figure1prep}
 storm_data_final <- storm_data_summary[storm_data_summary$event_match == TRUE, ]
@@ -597,7 +623,7 @@ Figure_2 <- ggplot(data = storm_data_plot2,
   scale_fill_gradient("Billions USD", low = "green", high="dark green") +
   theme(legend.position = c(0.9, 0.9), 
         legend.direction = "horizontal",
-        panel.grid.major.y = element_line(colour = "#808080")) +
+        panel.grid.major.y = element_line(colour = "#ffffff")) +
   guides(fill = guide_colorbar(title.position = "top", title.theme = element_text(size=10, angle = 0)))
 ```
 
@@ -658,7 +684,7 @@ dangerous to life, independent of overall risk of encountering the events.
 
 ***
 
-## Figure 2 - Economic Damage Exploration
+### Figure 2 - Economic Damage Exploration
 
 ```{r figure2, fig.align = "center", fig.width = 10, fig.height = 5, fig.cap = "This plot shows economic damage in billions of USD, for the top 20 event types by economic damage. Bars are colored by the economic damage. The values have not been adjusted for inflation."}
 Figure_2
@@ -674,7 +700,7 @@ events are required to have a damage statement, even if an estimate.
 
 ***
 
-## Figure 3 - Economic Damage vs Combined Health Impact
+### Figure 3 - Economic Damage vs Combined Health Impact
 
 ```{r figure3, fig.align = "center", fig.width = 10, fig.height = 10, fig.cap = "This plot shows economic damage vs combined health impact (injuries + fatalities), both on a log10 scale, for the top 20 event types by combined health impact. Points and labels are colored by the ratio of fatalities to injuries, before log10 conversion."}
 Figure_3
